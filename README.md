@@ -29,7 +29,7 @@ paging traffic, aircraft ACARS messages and call activity.
 | | |
 |---|---|
 | **SDR** | **RTL-SDR Blog V4** (covers the paging and ring-alert channels) or **HackRF One** (covers the whole band). |
-| **Antenna** | anything for ~1620 MHz. An **active GPS antenna** usually works, unless it has a narrow GPS-only filter. |
+| **Antenna** | anything for ~1620 MHz. An **active GPS antenna** usually works, unless it has a narrow GPS-only filter. More antenna options: the [muCCC Iridium antenna page](https://wiki.muc.ccc.de/iridium:antennas). |
 | **A view of the sky** | the biggest factor by far. In testing, 5 minutes outdoors gave **1,100 frames per minute**; indoors 20–50. |
 | **Computer** | Linux with Python 3.8+ and GNU Radio 3.9+. A Raspberry Pi 4/5 is enough for the RTL-SDR. |
 
@@ -119,6 +119,8 @@ by default. That fix, the measurements behind the defaults, the config files and
 - The map, the receiver marker and the exports reveal roughly where you are. Keep that in mind before sharing them.
 
 ## Credits
+
+Antenna advice: the [muCCC wiki](https://wiki.muc.ccc.de/iridium:antennas), from the team behind gr-iridium and iridium-toolkit.
 
 Built on [iridium-sniffer](https://github.com/alphafox02/iridium-sniffer) (alphafox02, GPL-3.0),
 [gr-iridium](https://github.com/muccc/gr-iridium) and [iridium-toolkit](https://github.com/muccc/iridium-toolkit)

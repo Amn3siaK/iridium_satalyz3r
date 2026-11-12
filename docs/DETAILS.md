@@ -304,7 +304,7 @@ A run that decoded nothing (e.g. the radio wasn't plugged in) leaves no files.
 | `Sample rate divided by decimation must be a multiple of 250000` | fix `sample_rate` or `DECIMATION` |
 | `invalid literal for int()` for `gain` | gains must be whole numbers |
 | Frames decode but no satellites on the map | positions only come from ring alerts. Wait a few minutes, or improve the sky view. |
-| No frames at all | check the antenna connection and `bias` setting, and move the antenna to a window. GNSS antennas with a GPS-only filter won't receive Iridium. |
+| No frames at all | check the antenna connection and `bias` setting, and move the antenna to a window. GNSS antennas with a GPS-only filter won't receive Iridium; see the [muCCC antenna page](https://wiki.muc.ccc.de/iridium:antennas) for antennas that do. |
 | HackRF: detector flooded, `ok` rate ≈ 0–1 %, mostly low-confidence RAW frames | Wi-Fi leaking into the HackRF IF: use the default `[hackrf-transfer]` setup (manual IF), not `HACKRF_OSMOSDR=1`. See [Why the HackRF uses a manual IF](#why-the-hackrf-uses-a-manual-if). |
 | HackRF: very low RMS / few frames | the 8-bit converter is under-driven: raise `vga` (aim for sample RMS ≈ 10–25 without clipping) |
 | Frame counts vary hugely between runs | normal: traffic depends on which satellites pass overhead (17 vs 258 frames in consecutive 45 s windows in testing) |
