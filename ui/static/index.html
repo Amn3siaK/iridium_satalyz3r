@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iridium_satalyz3r</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='5' fill='%2338bdf8'/><ellipse cx='16' cy='16' rx='14' ry='5' fill='none' stroke='%2338bdf8' stroke-width='2' transform='rotate(-30 16 16)'/></svg>">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" class="logo" aria-hidden="true"><circle cx="16" cy="16" r="5"/><ellipse cx="16" cy="16" rx="14" ry="5" transform="rotate(-30 16 16)"/></svg>
+    <div>
+      <h1>iridium_satalyz3r</h1>
+      <div class="sub" id="sdrline">iridium-toolkit</div>
+    </div>
+  </div>
+  <div class="status">
+    <button id="rxbtn" class="btn rxbtn" title="Start or stop the receiver, choose the radio, record raw IQ"><span class="dot" id="rxdot"></span><span id="rxlabel">Receiver</span></button>
+    <button id="recbtn" class="btn" title="Open a saved session or an IQ recording from logs/">Recordings</button>
+    <details class="menu" id="exportmenu">
+      <summary class="btn" title="Download what this view shows">Export</summary>
+      <div class="menu-list">
+        <a data-what="frames" href="#">Frames <span class="muted">CSV, whole session</span></a>
+        <a data-what="tracks" href="#">Satellite tracks <span class="muted">GeoJSON</span></a>
+        <a data-what="summary" href="#">Summary <span class="muted">JSON</span></a>
+      </div>
+    </details>
+    <span id="pill" class="pill">connecting…</span>
+    <span id="lastframe" class="muted"></span>
+    <label class="toggle" title="Pager / ACARS / SBD message text. Check your local law before viewing or sharing other people's message content.">
+      <input type="checkbox" id="showContent"> <span>Show message content</span>
+    </label>
+  </div>
+</header>
+
+<div id="rxalert" class="rxalert hidden">
+  <div><b id="rxalert-title">The receiver stopped</b> <span id="rxalert-text"></span></div>
+  <div class="actions"><button class="btn" id="rxalert-open">Details</button><button class="btn" id="rxalert-x">Dismiss</button></div>
+</div>
+
+<dialog id="rxdlg" class="recdlg rxdlg">
+  <div class="dlg-h"><h2>Receiver</h2><button class="btn" data-close="rxdlg">Close</button></div>
+  <div class="rx-status" id="rx-status">…</div>
+  <div id="rx-error" class="rd-error hidden"></div>
+  <h3>Radio</h3>
+  <div id="rx-radios" class="rx-radios"></div>
+  <div class="rx-opts">
+    <label>Run for <input type="number" id="rx-min" min="0" step="1" placeholder="no limit"> minutes</label>
+    <label title="iridium-sniffer finds more frames and needs less CPU; gr-iridium is the reference implementation">Demodulator
+      <select id="rx-demod"><option value="auto">automatic</option><option value="sniffer">iridium-sniffer</option><option value="gr">gr-iridium</option></select></label>
+  </div>
+  <div class="actions rx-actions">
+    <button class="btn primary" id="rx-start">Start receiving</button>
+    <button class="btn" id="rx-record" title="Save the raw radio signal to logs/iq/ instead of decoding it. Open it later under Recordings, or in IridiScope / SDR++.">Record raw IQ</button>
+    <button class="btn danger" id="rx-stop">Stop</button>
+  </div>
+  <details class="rx-log"><summary class="muted">Receiver log</summary><pre id="rx-log"></pre></details>
+  <div class="muted rd-note">Receiving decodes live and saves the session under Recordings. A raw IQ recording stores the signal itself
+    (RTL-SDR 300 MB/min, HackRF 1.2 GB/min) and can be decoded later. One job runs at a time.</div>
+</dialog>
+
+<dialog id="satdlg" class="recdlg satdlg">
+  <div class="dlg-h"><h2 id="sat-title">Satellite</h2><button class="btn" data-close="satdlg">Close</button></div>
+  <div class="chiprow" id="sat-chips"></div>
+  <h3>Doppler shift of its ring alerts <span class="muted" id="sat-dop-note"></span></h3>
+  <canvas id="sat-dop" height="210"></canvas>
+  <h3>Signal <span class="muted" id="sat-snr-note">SNR of each ring alert</span></h3>
+  <canvas id="sat-snr" height="150"></canvas>
+  <div class="muted rd-note" id="sat-help">A satellite coming towards you is received above the channel frequency, one moving away below it.
+    The curve crosses zero at its closest approach; a steep crossing means it passed nearly overhead. A constant offset of a
+    few kHz is your radio's own frequency error.</div>
+</dialog>
+
+<dialog id="locdlg" class="recdlg locdlg">
+  <div class="dlg-h"><h2>Receiver location</h2><button class="btn" data-close="locdlg">Close</button></div>
+  <div class="muted">Used only in this browser, to work out where in the sky each satellite was. It is not sent anywhere.</div>
+  <div class="rx-opts">
+    <label>Latitude <input type="number" id="loc-lat" step="0.01" min="-90" max="90" placeholder="e.g. 48.14"></label>
+    <label>Longitude <input type="number" id="loc-lon" step="0.01" min="-180" max="180" placeholder="e.g. 11.58"></label>
+  </div>
+  <div class="actions rx-actions">
+    <button class="btn primary" id="loc-save">Save</button>
+    <button class="btn" id="loc-pick">Pick on the map</button>
+    <button class="btn" id="loc-est" title="Forget the saved location and use the estimate from the spot beams heard">Use the estimate</button>
+  </div>
+  <div class="muted rd-note" id="loc-note"></div>
+</dialog>
+
+<div id="recbar" class="recbar hidden">
+  <div class="rb-main">
+    <span class="tag rb-tag" id="rb-kind">REC</span>
+    <div class="rb-text">
+      <div class="rb-name" id="rb-name"></div>
+      <div class="rb-meta" id="rb-meta"></div>
+    </div>
+  </div>
+  <div class="rb-side">
+    <div class="rb-status" id="rb-status"></div>
+    <div class="rb-prog hidden" id="rb-prog"><i></i></div>
+    <div class="actions">
+      <button id="rb-live" class="btn">Back to live</button>
+      <button id="rb-close" class="btn">Close recording</button>
+    </div>
+  </div>
+</div>
+
+<dialog id="recdlg" class="recdlg">
+  <div class="dlg-h">
+    <h2>Recordings</h2>
+    <div class="actions">
+      <button id="rd-refresh" class="btn">Refresh</button>
+      <span class="muted" id="rd-disk"></span>
+      <button id="rd-x" class="btn" aria-label="Close">Close</button>
+    </div>
+  </div>
+  <div id="rd-current" class="rd-current hidden"></div>
+  <div id="rd-error" class="rd-error hidden"></div>
+  <h3>Decoded sessions <span class="muted" id="rd-sess-note">logs/frames-*.parsed · from run-ui.sh / run-live.sh</span></h3>
+  <div class="scroll rd-list">
+    <table class="tbl" id="rd-sessions">
+      <thead><tr><th data-sort="start">Recorded</th><th data-sort="duration">Duration</th><th data-sort="frames">Frames</th><th data-sort="per_min" title="Frames per minute: the fairest way to compare antenna positions, radios and settings">Per min</th><th data-sort="avg_snr">SNR</th><th data-sort="sats" title="Satellites heard at least twice">Sats</th><th data-sort="ok_avg" title="Share of detected bursts that decoded">OK</th><th>Radio · demodulator</th><th title="Your own note, e.g. where the antenna was">Note</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty hidden" id="rd-sessions-empty">No decoded sessions yet. Every <code>./run-ui.sh</code> run saves one.</div>
+  </div>
+  <h3>IQ recordings <span class="muted">logs/iq/*.wav · from record-iq.sh (other 2-channel IQ WAVs work too)</span></h3>
+  <div class="scroll rd-list">
+    <table class="tbl" id="rd-iq">
+      <thead><tr><th>Recorded</th><th>Radio</th><th>Centre</th><th>Rate</th><th>Duration</th><th>Size</th><th>Decoded</th><th>Note</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty hidden" id="rd-iq-empty">No IQ recordings yet. Make one with <code>./record-iq.sh 600</code>.</div>
+  </div>
+  <div class="muted rd-note" id="rd-note">IQ recordings are decoded with iridium-sniffer and iridium-toolkit the first time you open them; the result is
+    saved next to the WAV, so opening it again is instant. Decoding runs at low priority, but on a slow computer it can still
+    cost a live receiver some frames.</div>
+</dialog>
+
+<section class="kpis">
+  <div class="kpi"><div class="v" id="k-total">0</div><div class="l">Frames decoded</div></div>
+  <div class="kpi"><div class="v" id="k-rate">0</div><div class="l">Frames / min</div></div>
+  <div class="kpi"><div class="v" id="k-sats">0</div><div class="l">Satellites heard</div></div>
+  <div class="kpi"><div class="v" id="k-ira">0</div><div class="l">Ring alerts</div></div>
+  <div class="kpi"><div class="v" id="k-pages">0</div><div class="l">Pages</div></div>
+  <div class="kpi"><div class="v" id="k-snr">–</div><div class="l">Avg SNR (dB)</div></div>
+  <div class="kpi"><div class="v" id="k-ok">–</div><div class="l">Burst decode OK</div></div>
+  <div class="kpi"><div class="v" id="k-msgs">0</div><div class="l">Reassembled msgs</div></div>
+</section>
+
+<main class="grid">
+  <section class="card map-card">
+    <div class="card-h">
+      <h2>Satellite map</h2>
+      <div class="actions">
+        <label class="toggle small"><input type="checkbox" id="follow" checked> <span>Auto-fit</span></label>
+        <button id="fit" class="btn">Fit view</button>
+      </div>
+    </div>
+    <div id="map"></div>
+    <div class="legend"><span class="lg-sat"></span>Satellite track (from ring alerts) <span class="lg-beam"></span>Spot beam centre</div>
+  </section>
+
+  <section class="card sats-card">
+    <div class="card-h"><h2>Satellites</h2><span class="muted" id="sats-note"></span></div>
+    <div class="scroll">
+      <table class="tbl" id="sats">
+        <thead><tr><th>Sat</th><th>Last heard</th><th>Frames</th><th>SNR</th><th title="Elevation above the horizon and compass direction when last located">Sky</th><th>Beams / cells</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="empty" id="sats-empty">No satellites identified yet. Satellites appear when a ring alert or broadcast frame is decoded.</div>
+      <div class="muted sats-hint" id="sats-hint">Click a satellite for its Doppler curve and signal history.</div>
+    </div>
+  </section>
+
+  <section class="card sky-card">
+    <div class="card-h">
+      <h2>Sky view</h2>
+      <div class="actions"><span class="muted" id="sky-loc"></span><button id="loc-btn" class="btn">Location</button></div>
+    </div>
+    <canvas id="sky" height="300"></canvas>
+    <div class="muted sky-note" id="sky-note">Where in the sky each satellite was when its position was decoded. The gaps show what your antenna cannot see.</div>
+  </section>
+
+  <section class="card">
+    <div class="card-h">
+      <h2>Channel activity</h2>
+      <div class="actions">
+        <span class="muted" id="freq-note">frames per 20 kHz</span>
+        <div class="seg" id="freqmode">
+          <button class="seg-b on" data-m="hist" title="Frames per 20 kHz since the start">Totals</button>
+          <button class="seg-b" data-m="wf" title="Every frame by time and frequency, newest at the top, coloured by frame type">Waterfall</button>
+        </div>
+      </div>
+    </div>
+    <canvas id="freq" height="180"></canvas>
+    <canvas id="wf" height="180" class="hidden"></canvas>
+  </section>
+
+  <section class="card">
+    <div class="card-h">
+      <h2>Signal quality</h2>
+      <div class="actions">
+        <span class="muted" id="sig-note">avg SNR per minute</span>
+        <div class="seg" id="sigmode">
+          <button class="seg-b on" data-m="snr" title="How far the frames stand out of the noise">SNR</button>
+          <button class="seg-b" data-m="noise" title="The noise level the receiver measures. A rising noise floor means interference.">Noise floor</button>
+        </div>
+      </div>
+    </div>
+    <canvas id="snr" height="180"></canvas>
+  </section>
+
+  <section class="card voice-card">
+    <div class="card-h">
+      <h2>Voice traffic</h2>
+      <span class="muted">call activity from voice-channel frames · metadata only, no audio is decoded</span>
+    </div>
+    <div class="voice">
+      <div class="vstats">
+        <div class="vs"><div class="v" id="v-active">0</div><div class="l">Active now</div></div>
+        <div class="vs"><div class="v" id="v-total">0</div><div class="l">Calls seen</div></div>
+        <div class="vs"><div class="v" id="v-avg">–</div><div class="l">Avg duration</div></div>
+        <div class="vs"><div class="v" id="v-long">–</div><div class="l">Longest</div></div>
+        <div class="vs"><div class="v" id="v-conc">0</div><div class="l">Max concurrent</div></div>
+        <div class="vs"><div class="v" id="v-short">0</div><div class="l">Short bursts</div></div>
+      </div>
+      <div class="vcharts">
+        <div><div class="muted chart-t">Calls started per 5 min</div><canvas id="vtimeline" height="130"></canvas></div>
+        <div><div class="muted chart-t">Calls per channel</div><canvas id="vchannels" height="130"></canvas></div>
+      </div>
+      <div class="scroll vtable">
+        <table class="tbl mono" id="calls">
+          <thead><tr><th>Status</th><th>Start</th><th>Duration</th><th>Channel</th><th>MHz</th><th>Doppler drift</th><th>Frames</th><th>SNR</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty" id="calls-empty">No calls yet. A call is a run of 3 or more voice frames on the same channel, with gaps under 20 s.</div>
+      </div>
+      <div class="muted vnote">Durations are lower bounds: indoors only a fraction of the frames are received. The channel number is approximate, as Doppler can shift it by ±1.</div>
+    </div>
+  </section>
+
+  <section class="card feed-card">
+    <div class="card-h">
+      <h2>Live frames</h2>
+      <div class="actions">
+        <div id="filters" class="chips"></div>
+        <button id="pause" class="btn">Pause</button>
+      </div>
+    </div>
+    <div class="scroll feed">
+      <table class="tbl mono" id="feed">
+        <thead><tr><th>Time</th><th>Type</th><th>MHz</th><th>SNR</th><th>Conf</th><th>Details <span class="muted">· click a row to read it in full</span></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card side-card">
+    <div class="card-h">
+      <div class="tabs">
+        <button class="tab active" data-tab="pages">Pages</button>
+        <button class="tab" data-tab="msgs">Messages</button>
+      </div>
+    </div>
+    <div class="scroll tabpane" id="tab-pages">
+      <table class="tbl mono" id="pages">
+        <thead><tr><th>Time</th><th>Sat</th><th>Beam</th><th>TMSI</th><th>MSC</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="empty" id="pages-empty">Pages are broadcast inside ring alerts when the network calls a handset in this beam. TMSIs are partially masked.</div>
+    </div>
+    <div class="scroll tabpane hidden" id="tab-msgs">
+      <div id="msgs"></div>
+      <div class="empty" id="msgs-empty">Pager messages, ACARS (aircraft) and SBD messages appear here once all their fragments have been received. These need a stronger signal; a window position helps.</div>
+      <div class="muted" id="reass-note"></div>
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-h"><h2>Frame types</h2></div>
+    <div id="types" class="types"></div>
+  </section>
+
+  <section class="card health-card">
+    <div class="card-h"><h2>Receiver health</h2><span class="muted" id="health-note"></span></div>
+    <div class="hstats">
+      <div class="vs"><div class="v" id="h-bursts">–</div><div class="l">Bursts detected / s</div></div>
+      <div class="vs"><div class="v" id="h-ok">–</div><div class="l">Decoded now</div></div>
+      <div class="vs"><div class="v" id="h-okavg">–</div><div class="l">Decoded, whole run</div></div>
+      <div class="vs"><div class="v" id="h-queue">–</div><div class="l">Queue (max)</div></div>
+      <div class="vs"><div class="v" id="h-drop">–</div><div class="l">Bursts dropped</div></div>
+      <div class="vs"><div class="v" id="h-rej">0</div><div class="l">Positions rejected</div></div>
+    </div>
+    <ul class="tips" id="health-tips"></ul>
+  </section>
+</main>
+
+<footer class="foot">
+  Local dashboard · data stays on this computer · Voice frames are used only for call activity (timing, channel, signal);
+  audio is never decoded and voice payloads are not shown. Decoding the content of other people's communications may be illegal where you live.
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

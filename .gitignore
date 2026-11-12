@@ -1,0 +1,6 @@
+# fetched + built by install.sh
+vendor/
+# recordings and decoded output (may contain other people's data, don't publish)
+logs/
+__pycache__/
+*.pyc

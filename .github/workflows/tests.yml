@@ -1,0 +1,23 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Unit tests (no radio or decoding tools needed; tests that need iridium-toolkit are skipped)
+        run: python -m unittest discover -s tests -v
+      - name: Shell scripts parse
+        run: for f in *.sh scripts/*.sh; do bash -n "$f" || exit 1; done
+      - name: Front-end JavaScript parses
+        run: node --check ui/static/app.js
